@@ -1,0 +1,118 @@
+pipeline {
+    agent any
+    parameters {
+        choice (
+            name: "TAURUS",
+            choices: "Yes",
+            description: "Run the test with Taurus"
+        )
+        choice (
+            name: "HOST_ADDRESS",
+            choices: "Dev",
+            description: "Which environment to test"
+        )
+        string (
+            name: "THREADS",
+            defaultValue: "1",
+            description: "Number of users"
+        )
+        string (
+            name: "ITERATIONS",
+            defaultValue: "1",
+            description: "Iterations"
+        )
+        string (
+            name: "RAMP_UP",
+            defaultValue: "1s",
+            description: "Ramp up time in seconds(ex. 1s)"
+        )
+    }
+    stages {
+        stage('Setup') {
+            // prepare environment vars
+            steps {
+                script {
+                    if (params.HOST_ADDRESS == 'Dev') {
+                        env.HOST_ADDRESS = "jenkins.techtreeit.com"
+                    } else if (params.HOST_ADDRESS == 'QA'){
+                        env.HOST_ADDRESS = "qa.ang.com"
+                    } else if (params.HOST_ADDRESS == 'Staging'){
+                        env.HOST_ADDRESS = ""
+                    }
+                }
+            }
+        }
+
+        stage('Run Taurus Tests') {
+            when {
+                expression {
+                    params.TAURUS == 'Yes'
+                }
+            }
+            agent { 
+                docker { 
+                    image 'blazemeter/taurus'
+                    args '-u root --entrypoint=\'\' -v $WORKSPACE:/project'
+                }
+            }
+            steps {
+            	sh "ls -la & pwd"
+                sh "bzt TaurusConfig.yml -o settings.env.HOST_ADDRESS=${env.HOST_ADDRESS} \
+                    -o execution.0.concurrency=${params.THREADS} -o execution.0.ramp-up=${params.RAMP_UP} \
+                    -o execution.0.iterations=${params.ITERATIONS} -report"
+                stash includes: 'performance_stats.xml', name: 'taurus-report-stash'
+            }
+        }
+
+        stage('Handle Taurus Results') {
+            when {
+                expression {
+                    params.TAURUS == 'Yes'
+                }
+            }
+            steps {
+                unstash 'taurus-report-stash'
+                perfReport 'performance_stats.xml'
+            }
+        }
+
+        stage('JMeter Test') {
+            when {
+                expression {
+                    params.TAURUS == 'No'
+                }
+            }
+            agent { 
+                docker { 
+                    image 'justb4/jmeter'
+                    args '-u root --entrypoint=\'\' -v $WORKSPACE:/project'
+                }
+            }
+            steps {
+                sh "jmeter \
+                      -n -Jreport_path=/project/performance -Jsample_variables=extractedValues \
+                      -JHostAddress=${env.HOST_ADDERSS} -JLoops=${params.ITERATIONS} \
+                      -JThreads=${params.THREADS} -JRampTime=${params.RAMP_UP} \
+                      -t /project/performance/demoscripts.jmx \
+                      -l /project/result.jtl \
+                      -j /project/jmeter.log"
+
+                archiveArtifacts artifacts: 'result.jtl'
+                archiveArtifacts artifacts: 'jmeter.log'
+                stash includes: 'result.jtl', name: 'jmeter-report-stash'
+            }
+        }
+
+        stage('Handle JMeter Results') {
+            when {
+                expression {
+                    params.TAURUS == 'No'
+                }
+            }
+            steps {
+                unstash 'jmeter-report-stash'
+                perfReport 'result.jtl'
+            }
+        }
+    }
+}

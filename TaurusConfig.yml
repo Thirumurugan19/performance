@@ -1,0 +1,13 @@
+modules:
+  jmeter:
+    properties:
+      HostAddress: ${HOST_ADDRESS}
+execution:
+- iterations: 1
+  concurrency: 1
+  ramp-up: 1s
+  scenario:
+    script: demoscripts.jmx
+reporting:
+- module: final-stats
+  dump-xml: performance_stats.xml
