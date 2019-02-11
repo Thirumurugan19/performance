@@ -33,7 +33,7 @@ pipeline {
             steps {
                 script {
                     if (params.HOST_ADDRESS == 'Dev') {
-                        env.HOST_ADDRESS = "jenkins.techtreeit.com"
+                        env.HOST_ADDRESS = "jenkins.yourdomain.com"
                     } else if (params.HOST_ADDRESS == 'QA'){
                         env.HOST_ADDRESS = "qa.ang.com"
                     } else if (params.HOST_ADDRESS == 'Staging'){
